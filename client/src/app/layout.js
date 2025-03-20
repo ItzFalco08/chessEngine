@@ -18,7 +18,7 @@ export default function RootLayout({ children }) {
         <link rel="icon" href="/wn.png" type="image/png" />
       </head>
       <body
-        className={`${poppins.variable} antialiased`}
+        className={`${poppins.variable} antialiased overflow-hidden`}
       >
         {children}
       </body>

@@ -1,116 +1,179 @@
 "use client"
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { Chess } from 'chess.js'
 
+const DARK_SQUARE = "#7c9eb2" 
+const LIGHT_SQUARE = "#d9e4e8"
+const SELECTED_DARK_SQUARE = "#d36c63"
+const SELECTED_LIGHT_SQUARE = "#e77b6e"
+
 const Chessboard = () => {
-    // Initialize the chess game
     const [game] = useState(() => new Chess())
-    const [rightClickedSquares, setRightClickedSquares] = useState({})
-    const [rightClickStartIndex, setRightClickStartIndex] = useState(null)
-    const [isDragging, setIsDragging] = useState(false)
+    const [highlightedSquares, setHighlightedSquares] = useState({})
+    const [dragStartIndex, setDragStartIndex] = useState(null)
+    const [isRightDragging, setIsRightDragging] = useState(false)
+    const lastHoveredIndex = useRef(null)
+    // Container ref for board sizing
+    const boardContainerRef = useRef(null)
+    const [squareWidth, setSquareWidth] = useState(0)
+
+    const [arrows, setArrows] = useState([])
+    const [temporaryArrow, setTemporaryArrow] = useState(null)
+
+    const [draggedPieceIndex, setDraggedPieceIndex] = useState(null)
+
     
 
-    // Safely get the board state
-    const board = game?.board() || []
 
-    // Define square colors
-    const DARK_SQUARE = "#7c9eb2"
-    const LIGHT_SQUARE = "#d9e4e8"
-    const SELECTED_DARK_SQUARE = "#d36c63"
-    const SELECTED_LIGHT_SQUARE = "#e77b6e"
+    // Use ResizeObserver to update squareWidth dynamically.
+    useEffect(() => {
+        if (!boardContainerRef.current) return
+        const observer = new ResizeObserver(entries => {
+            if (entries[0]) {
+                const width = entries[0].contentRect.width / 8
+                setSquareWidth(width)
+            }
+        })
+        observer.observe(boardContainerRef.current)
+        return () => observer.disconnect()
+    }, [])
 
-    // Handle mouse down (grab piece)
-    function onMouseDown(e) {
-        if (e.button === 0) {
-            e.target.style.cursor = 'grabbing'
-        }
-    }
+    // Memoized board data (flattening nested arrays)
+    const board = useMemo(() => game.board().flat() || [], [game])
 
-    // Handle mouse up (release piece)
-    function onMouseUp(e) {
-        e.target.style.cursor = 'grab'
-    }
 
-    // Prevent context menu on right-click
-    function handleContextMenu(e) {
-        e.preventDefault()
-    }
+    const handleRightClickStart = useCallback((index) => {
+        setIsRightDragging(true)
+        setDragStartIndex(index)
+        lastHoveredIndex.current = null
+    }, [])
 
-    // Handle right-click to highlight squares
-    function handleMouseUp(e, index) {
-        if (e.button === 2) setIsDragging(false)
-        if (e.button === 2 && index === rightClickStartIndex) {
-            setRightClickedSquares((prev) => ({
+    const handleLeftClick = useCallback(() => {
+        setHighlightedSquares({})
+        setArrows([])
+    }, [])
+
+    const handleRightClickEnd = useCallback((index) => {
+        setIsRightDragging(false)
+        if (index === dragStartIndex) {
+            setHighlightedSquares(prev => ({
                 ...prev,
                 [index]: !prev[index]
             }))
+        } else if (temporaryArrow) {
+            setArrows(prev => [...prev, temporaryArrow])
         }
-    }
+        setTemporaryArrow(null)
+    }, [dragStartIndex, temporaryArrow])
 
-    // Clear highlighted squares on left-click
-    function removeClickedSquares(e, index) {
-        if (e.button === 0) {
-            setRightClickedSquares({}) // Reset to empty object
-        } else if (e.button === 2) {
-            setIsDragging(true)
-            setRightClickStartIndex(index)
-            console.log('index set to: ', index)
+    const getCords = useCallback((index) => {
+        const row = Math.floor(index / 8)
+        const col = index % 8
+        return {
+            x: squareWidth * col + squareWidth / 2,
+            y: squareWidth * row + squareWidth / 2
         }
+    }, [squareWidth])
+
+    const handleArrowDrag = useCallback((index) => {
+        if (isRightDragging && lastHoveredIndex.current !== index && index !== dragStartIndex) {
+            lastHoveredIndex.current = index
+            const dragStartCords = getCords(dragStartIndex)
+            const dragEndCords = getCords(index)
+            setTemporaryArrow({
+                x1: dragStartCords.x,
+                y1: dragStartCords.y,
+                x2: dragEndCords.x,
+                y2: dragEndCords.y,
+            })
+        }
+    }, [isRightDragging, dragStartIndex, getCords])
+
+    function MoveMouseDown(e) {
     }
-
-    const handleMouseMove = useCallback(
-        (index) => {
-            if (isDragging) {
-                console.log('start to end: ', rightClickStartIndex, index)
-                // store arrow to an array and draw them
-            }
-        },
-        [isDragging],
-    )
-
 
 
     return (
-        <div className='relative grid grid-cols-8 h-[320px] w-[320px] md:h-[480px] md:w-[480px] xl:w-[600px] xl:h-[600px] bg-white'>
-            {board.flat().map((square, index) => {
-                // Skip rendering if square is null or undefined
+        <div
+            ref={boardContainerRef}
+            className="relative grid grid-cols-8 w-[320px] h-[320px] md:w-[480px] md:h-[480px] xl:w-[600px] xl:h-[600px] bg-white"
+        >
+            {/* Render SVG arrows */}
+            <svg className="absolute z-[100] pointer-events-none" width="600" height="600">
+                <defs>
+                    <marker
+                        id="arrowhead"
+                        refX="15"
+                        refY="20"
+                        markerWidth="30"
+                        markerHeight="40"
+                        markerUnits="userSpaceOnUse"
+                        orient="auto"
+                    >
+                        <path d="M 0 0 L 30 20 L 0 40 Z" fill="green" />
+                    </marker>
+                </defs>
+                {arrows.map((arrow, index) => (
+                    <line
+                        key={index}
+                        x1={arrow.x1}
+                        y1={arrow.y1}
+                        x2={arrow.x2}
+                        y2={arrow.y2}
+                        opacity="0.6"
+                        stroke="green"
+                        strokeWidth="8"
+                        markerEnd="url(#arrowhead)"
+                    />
+                ))}
+                {temporaryArrow && (
+                    <line
+                        x1={temporaryArrow.x1}
+                        y1={temporaryArrow.y1}
+                        x2={temporaryArrow.x2}
+                        y2={temporaryArrow.y2}
+                        opacity="0.6"
+                        stroke="green"
+                        strokeWidth="8"
+                        markerEnd="url(#arrowhead)"
+                    />
+                )}
+            </svg>
 
-                // Calculate row and column for color logic
-                const row = Math.floor(index / 8)
-                const col = index % 8
-                const isDark = (row + col) % 2 !== 0
-                const isRightClicked = !!rightClickedSquares[index]
-
-                // Determine square color
-                const SQUARE_COLOR = isRightClicked
+            {/* Render board squares */}
+            {board.map((square, index) => {
+                // Determine square color based on default pattern
+                const isDark = ((Math.floor(index / 8) + (index % 8)) % 2 !== 0)
+                const bgColor = highlightedSquares[index]
                     ? (isDark ? SELECTED_DARK_SQUARE : SELECTED_LIGHT_SQUARE)
                     : (isDark ? DARK_SQUARE : LIGHT_SQUARE)
-
-                // Get piece type (e.g., "wp" for white pawn)
-                const PIECE = square ? square.color + square.type : false
-
                 return (
                     <div
                         key={index}
-                        className='w-[40px] h-[40px] md:w-[60px] md:h-[60px] xl:w-[75px] xl:h-[75px]'
-                        style={{ backgroundColor: SQUARE_COLOR }}
-                        onContextMenu={(e) => handleContextMenu(e)}
-                        onMouseUp={(e) => handleMouseUp(e, index)}
-                        onMouseDown={(e) => removeClickedSquares(e, index)}
-                        onMouseMove={() => handleMouseMove(index)}
+                        onContextMenu={(e) => e.preventDefault()}
+                        onClick={handleLeftClick}
+                        onMouseDown={(e) => {
+                            if (e.button === 2) handleRightClickStart(index)
+                        }}
+                        onMouseUp={(e) => {
+                            if (e.button === 2) handleRightClickEnd(index)
+                        }}
+                        onMouseMove={() => handleArrowDrag(index)}
+                        className=" flex justify-center items-center w-[40px] h-[40px] md:w-[60px] md:h-[60px] xl:w-[75px] xl:h-[75px]"
+                        style={{ backgroundColor: bgColor }}
                     >
-                        {PIECE && (
+                        {/* Render chess piece image if available */}
+                        {square && (
                             <img
                                 draggable={false}
-                                onMouseDown={onMouseDown}
-                                onMouseUp={onMouseUp}
-                                className='w-full h-full cursor-grab'
-                                src={`/${PIECE}.png`} // Ensure images are in the public folder
-                                onError={(e) => {
-                                    // Hide broken images
-                                    e.target.style.display = 'none'
-                                }}
-                                alt={`idk`} // Accessibility
+                                className="cursor-grab active:cursor-grabbing"
+                                width={squareWidth}
+                                height={squareWidth}
+                                src={`/${square.color}${square.type}.png`}
+                                alt={`${square.color} ${square.type}`}
+                                loading="lazy"
+                                onMouseDown={(e)=> MoveMouseDown(e, index)}
+                                onError={(e) => (e.target.style.display = 'none')}
                             />
                         )}
                     </div>
