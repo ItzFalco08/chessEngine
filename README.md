@@ -1,2 +1,0 @@
-# chessEngine
-chess engine
